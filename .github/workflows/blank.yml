@@ -1,0 +1,22 @@
+name: Test Iranian Sites
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test film2movie
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+          "https://www.film2movie.asia/wp-json/wp/v2/posts?search=Breaking+Bad&per_page=3"
+          
+      - name: Test uptvs
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+          "https://www.uptvs.com/?s=Breaking+Bad"
+          
+      - name: Test archive
+        run: |
+          curl -s -o /dev/null -w "%{http_code}" \
+          "http://dls6.iran-gamecenter-host.com/DonyayeSerial/"
