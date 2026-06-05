@@ -1,28 +1,65 @@
-name: Test Iranian Sites
+name: Download Archive
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *'
 
 jobs:
-  test:
+  download:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Test film2serial
-        run: |
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-          "https://www.film2serial.ir/" \
-          -H "User-Agent: Mozilla/5.0")
-          echo "film2serial: $CODE"
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Test moviesho
+      - name: Download archive
         run: |
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-          "https://www.moviesho.com/" \
-          -H "User-Agent: Mozilla/5.0")
-          echo "moviesho: $CODE"
+          curl -L \
+            --max-time 60 \
+            --retry 3 \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+            -o archive.html \
+            "https://dls2.film2cinemaha.top/DonyayeSerial/donyaye_serial_all_archive.html"
+          SIZE=$(wc -c < archive.html)
+          echo "Size: $SIZE bytes"
+          if [ $SIZE -lt 100000 ]; then
+            echo "فایل ناقصه"
+            exit 1
+          fi
 
-      - name: Test donyayeserial
+      - name: Convert to JSON
         run: |
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-          "https://donyayeserial.com/" \
-          -H "User-Agent: Mozilla/5.0")
-          echo "donyayeserial: $CODE"
+          node -e "
+          const fs = require('fs');
+          const html = fs.readFileSync('archive.html', 'utf8');
+          const entries = [];
+          const blocks = html.split(/(?=\d+\.\s+[A-Za-z])/);
+          for (const block of blocks) {
+            const titleMatch = block.match(/^(\d+)\.\s+(.+?)\s+start_year/);
+            const imdbMatch = block.match(/IMDb Code:\s*(tt\d+)/);
+            const typeMatch = block.match(/Title Type:\s*(\w+)/);
+            if (!titleMatch || !imdbMatch) continue;
+            const links = [];
+            const linkRegex = /href=\"(https?:\/\/[^\"]+\.(?:mkv|mp4|avi|zip|rar)[^\"]*)\"/gi;
+            let m;
+            while ((m = linkRegex.exec(block)) !== null) links.push(m[1]);
+            if (links.length === 0) continue;
+            entries.push({
+              title: titleMatch[2].trim(),
+              imdb_id: imdbMatch[1],
+              type: typeMatch ? typeMatch[1] : 'movie',
+              links: links
+            });
+          }
+          fs.writeFileSync('archive.json', JSON.stringify(entries));
+          console.log('تعداد آثار:', entries.length);
+          "
+
+      - name: Commit and push
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add archive.html archive.json
+          git diff --staged --quiet || git commit -m "آپدیت آرشیو $(date '+%Y-%m-%d')"
+          git push
